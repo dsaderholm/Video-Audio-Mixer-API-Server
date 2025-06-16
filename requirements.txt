@@ -1,0 +1,6 @@
+# Core dependencies
+flask==2.3.3
+werkzeug==2.3.7
+
+# Additional utilities
+requests==2.31.0

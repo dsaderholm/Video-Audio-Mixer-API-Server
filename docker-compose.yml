@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  video-audio-mixer-api:
+    build: .
+    ports:
+      - "8049:8049"
+    volumes:
+      - /tmp:/tmp
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    container_name: video-audio-mixer-api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8049/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
