@@ -4,6 +4,7 @@ import os
 import tempfile
 import logging
 import traceback
+import threading
 from audio_mixer import AudioMixer
 
 # Set up logging
@@ -14,6 +15,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Global lock to prevent concurrent processing
+processing_lock = threading.Lock()
+processing_in_progress = False
 
 # Configuration
 UPLOAD_FOLDER = '/tmp/uploads'
@@ -47,6 +52,14 @@ def health_check():
     """Health check endpoint"""
     return jsonify({'status': 'healthy', 'service': 'Video Audio Mixer API'}), 200
 
+@app.route('/status', methods=['GET'])
+def get_status():
+    """Get current processing status"""
+    return jsonify({
+        "processing_in_progress": processing_in_progress,
+        "service": "Video Audio Mixer API"
+    }), 200
+
 @app.route('/mix', methods=['POST'])
 def mix_video_audio():
     """
@@ -64,6 +77,15 @@ def mix_video_audio():
     Returns:
     - Mixed video file
     """
+    global processing_in_progress
+    
+    # Check if processing is already in progress
+    with processing_lock:
+        if processing_in_progress:
+            logger.warning("Processing already in progress, rejecting request")
+            return jsonify({"error": "Video processing already in progress. Please wait."}), 429
+        processing_in_progress = True
+    
     temp_files = []  # Keep track of temporary files to clean up
 
     try:
@@ -172,6 +194,10 @@ def mix_video_audio():
         return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
     
     finally:
+        # Always reset the processing flag
+        with processing_lock:
+            processing_in_progress = False
+        
         # Note: We don't cleanup immediately since we're sending the file
         # The temp files will be cleaned up by the OS eventually
         pass
