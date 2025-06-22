@@ -22,6 +22,7 @@ processing_in_progress = False
 
 # Configuration
 UPLOAD_FOLDER = '/tmp/uploads'
+AUDIO_VOLUME_PATH = '/app/audio'  # Docker volume mount point for audio files
 ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv', 'webm'}
 ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'wav', 'aac', 'ogg', 'flac', 'm4a'}
 MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB limit
@@ -60,14 +61,41 @@ def get_status():
         "service": "Video Audio Mixer API"
     }), 200
 
+@app.route('/list-audio', methods=['GET'])
+def list_audio_files():
+    """List available audio files in the volume"""
+    try:
+        if not os.path.exists(AUDIO_VOLUME_PATH):
+            return jsonify({"error": "Audio volume not mounted"}), 500
+        
+        audio_files = []
+        for filename in os.listdir(AUDIO_VOLUME_PATH):
+            if allowed_audio_file(filename):
+                file_path = os.path.join(AUDIO_VOLUME_PATH, filename)
+                file_size = os.path.getsize(file_path)
+                audio_files.append({
+                    "filename": filename,
+                    "size_bytes": file_size,
+                    "size_mb": round(file_size / (1024 * 1024), 2)
+                })
+        
+        return jsonify({
+            "audio_files": sorted(audio_files, key=lambda x: x['filename']),
+            "count": len(audio_files)
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Error listing audio files: {str(e)}")
+        return jsonify({"error": f"Error listing audio files: {str(e)}"}), 500
+
 @app.route('/mix', methods=['POST'])
 def mix_video_audio():
     """
     Mix audio with video
     
     Parameters:
-    - video: Video file (required)
-    - audio: Audio file (required) 
+    - video: Video file (required, uploaded file)
+    - audio_filename: Name of audio file in the volume (required, string)
     - volume: Audio volume level (optional, default: 0.5)
               Can be a float between 0.0 and 2.0
               Or one of the presets: 'mix', 'background', 'main'
@@ -97,25 +125,28 @@ def mix_video_audio():
         if 'video' not in request.files:
             return jsonify({'error': 'No video file provided'}), 400
         
-        # Check if audio file is provided
-        if 'audio' not in request.files:
-            return jsonify({'error': 'No audio file provided'}), 400
+        # Check if audio filename is provided
+        audio_filename = request.form.get('audio_filename')
+        if not audio_filename:
+            return jsonify({'error': 'No audio_filename provided'}), 400
         
         video_file = request.files['video']
-        audio_file = request.files['audio']
         
-        # Validate files
+        # Validate video file
         if not video_file or not video_file.filename:
             return jsonify({'error': 'No video file selected'}), 400
-        
-        if not audio_file or not audio_file.filename:
-            return jsonify({'error': 'No audio file selected'}), 400
         
         if not allowed_video_file(video_file.filename):
             return jsonify({'error': f'Invalid video file type. Allowed types are: {", ".join(ALLOWED_VIDEO_EXTENSIONS)}'}), 400
 
-        if not allowed_audio_file(audio_file.filename):
+        # Validate and locate audio file
+        audio_filename = secure_filename(audio_filename)
+        if not allowed_audio_file(audio_filename):
             return jsonify({'error': f'Invalid audio file type. Allowed types are: {", ".join(ALLOWED_AUDIO_EXTENSIONS)}'}), 400
+
+        audio_file_path = os.path.join(AUDIO_VOLUME_PATH, audio_filename)
+        if not os.path.exists(audio_file_path):
+            return jsonify({'error': f'Audio file not found: {audio_filename}'}), 400
 
         # Get volume parameter
         volume = request.form.get('volume', '0.5')
@@ -149,24 +180,12 @@ def mix_video_audio():
             logger.error(f"Error saving video file: {str(e)}")
             return jsonify({'error': 'Error saving video file'}), 500
 
-        # Save audio to temporary file
-        audio_extension = audio_file.filename.rsplit('.', 1)[1].lower()
-        temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=f'_audio_{temp_suffix}.{audio_extension}')
-        temp_files.append(temp_audio.name)
-        
-        try:
-            audio_file.save(temp_audio.name)
-            logger.info(f"Audio saved temporarily as {temp_audio.name}")
-        except Exception as e:
-            logger.error(f"Error saving audio file: {str(e)}")
-            return jsonify({'error': 'Error saving audio file'}), 500
-
         # Mix audio with video
         try:
             mixer = AudioMixer()
             output_path = mixer.mix_audio(
                 temp_video.name,
-                temp_audio.name,
+                audio_file_path,
                 volume_level,
                 loop_audio
             )

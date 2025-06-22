@@ -5,6 +5,9 @@ networks:
     external: true
     name: Video Generation
 
+volumes:
+  audio_files:
+
 services:
   video-audio-mixer-api:
     build: .
@@ -15,6 +18,7 @@ services:
       - "8049:8049"
     volumes:
       - /tmp:/tmp
+      - audio_files:/app/audio  # Mount audio files volume
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped

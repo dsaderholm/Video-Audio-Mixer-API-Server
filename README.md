@@ -1,16 +1,133 @@
 # Video Audio Mixer API Server
 
-A standalone Flask API server for mixing audio files with video files using FFmpeg. This API allows you to add background music, voiceovers, or any audio to your videos with customizable volume controls.
+A Flask-based API server that mixes audio files with video files using FFmpeg, now optimized to use audio files from a Docker volume.
 
 ## Features
 
-- **Simple API**: Single endpoint to mix audio with video
-- **Flexible Volume Control**: Use presets or custom volume levels
-- **Multiple Format Support**: Supports various video and audio formats
-- **Docker Ready**: Complete containerization with Docker and docker-compose
-- **Health Monitoring**: Built-in health check endpoint
-- **Large File Support**: Handles files up to 500MB
-- **Automatic Cleanup**: Temporary files are managed automatically
+- Mix audio files with video files
+- Audio files stored in Docker volume (no upload required)
+- Volume control with presets (mix, background, main) or custom levels
+- Audio looping to match video duration
+- Health check and status endpoints
+- List available audio files
+- Thread-safe processing with concurrent request protection
+
+## New API Usage
+
+### Setup Audio Files
+
+1. The audio files are stored in a Docker volume named `audio_files`
+2. Copy your audio files to the volume using docker cp:
+
+```bash
+# Copy files to the volume (container must be running)
+docker cp your_audio_file.mp3 video-audio-mixer-api:/app/audio/
+
+# Or copy multiple files
+docker cp /path/to/your/audio/files/. video-audio-mixer-api:/app/audio/
+```
+
+3. The volume persists between container restarts automatically
+
+### API Endpoints
+
+#### List Available Audio Files
+```bash
+curl http://10.20.0.18:8049/list-audio
+```
+
+#### Mix Video with Audio
+```bash
+curl -X POST http://10.20.0.18:8049/mix \
+  -F "video=@/path/to/your/video.mp4" \
+  -F "audio_filename=background_music.mp3" \
+  -F "volume=background" \
+  -F "loop=true"
+```
+
+### Parameters
+
+- `video`: Video file (uploaded)
+- `audio_filename`: Name of audio file in the volume (string)
+- `volume`: Volume control (optional, default: 0.5)
+  - Presets: `mix`, `background`, `main`
+  - Custom: Float between 0.0-2.0
+- `loop`: Loop audio to match video duration (optional, default: true)
+  - Values: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`
+
+### Volume Presets
+
+- **`mix`**: Equal mix (video: 50%, audio: 50%)
+- **`background`**: Video dominant (video: 90%, audio: 30%)
+- **`main`**: Audio dominant (video: 20%, audio: 80%)
+
+## Quick Start
+
+1. **Build and start the container:**
+```bash
+docker-compose up -d --build
+```
+
+2. **Add audio files to the volume:**
+```bash
+# Copy audio files to the Docker volume
+docker cp your_music.mp3 video-audio-mixer-api:/app/audio/
+docker cp /path/to/audio/files/. video-audio-mixer-api:/app/audio/
+```
+
+3. **List available audio files:**
+```bash
+curl http://10.20.0.18:8049/list-audio
+```
+
+4. **Mix a video with audio:**
+```bash
+curl -X POST http://10.20.0.18:8049/mix \
+  -F "video=@video.mp4" \
+  -F "audio_filename=music.mp3" \
+  -F "volume=background" \
+  -F "loop=true" \
+  --output mixed_video.mp4
+```
+
+## Examples
+
+### Background Music
+```bash
+curl -X POST http://10.20.0.18:8049/mix \
+  -F "video=@presentation.mp4" \
+  -F "audio_filename=soft_piano.mp3" \
+  -F "volume=background" \
+  -F "loop=true" \
+  --output presentation_with_music.mp4
+```
+
+### Voice Over
+```bash
+curl -X POST http://10.20.0.18:8049/mix \
+  -F "video=@tutorial.mp4" \
+  -F "audio_filename=narration.wav" \
+  -F "volume=main" \
+  -F "loop=false" \
+  --output tutorial_with_voice.mp4
+```
+
+### Custom Volume
+```bash
+curl -X POST http://10.20.0.18:8049/mix \
+  -F "video=@demo.mp4" \
+  -F "audio_filename=sound_effect.mp3" \
+  -F "volume=0.8" \
+  -F "loop=true" \
+  --output demo_with_effects.mp4
+```
+
+## Testing
+
+Use the provided test script:
+```bash
+python test_api_volume.py
+```
 
 ## Supported Formats
 
@@ -20,234 +137,80 @@ A standalone Flask API server for mixing audio files with video files using FFmp
 ### Audio Formats  
 - MP3, WAV, AAC, OGG, FLAC, M4A
 
-## Quick Start
-
-### Using Docker Compose (Recommended)
-
-1. Clone or download this repository
-2. Navigate to the project directory
-3. Start the server:
-
-```bash
-docker-compose up -d
-```
-
-The API will be available at `http://localhost:8049`
-
-### Manual Installation
-
-1. Install Python 3.11+
-2. Install FFmpeg
-3. Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-4. Run the server:
-
-```bash
-python app/main.py
-```
-
-## API Usage
-
-### Health Check
-
-```bash
-curl http://localhost:8049/health
-```
-
-### Mix Audio with Video
-
-**Endpoint:** `POST /mix`
-
-**Parameters:**
-- `video` (file, required): Video file to mix audio with
-- `audio` (file, required): Audio file to add to the video
-- `volume` (string/float, optional): Volume control (default: 0.5)
-- `loop` (string, optional): Whether to loop audio to match video duration (default: 'true')
-
-**Volume Options:**
-- `"mix"` - Equal mix of original video audio and new audio (0.5 each)
-- `"background"` - Video audio dominant, new audio as background (0.9 video, 0.3 audio)
-- `"main"` - New audio dominant, video audio as background (0.2 video, 0.8 audio)
-- Custom float value between 0.0 and 2.0 for the audio volume
-
-**Loop Options:**
-- `"true"` (default) - Loop audio to match video duration
-- `"false"` - Play audio once, silence when audio ends
-- Also accepts: `"1"`, `"0"`, `"yes"`, `"no"`, `"on"`, `"off"`
-
-### cURL Examples
-
-#### Basic mixing with default volume:
-```bash
-curl -X POST http://localhost:8049/mix \
-  -F "video=@/path/to/your/video.mp4" \
-  -F "audio=@/path/to/your/audio.mp3" \
-  -o mixed_video.mp4
-```
-
-#### Using volume presets:
-```bash
-# Background music (quiet)
-curl -X POST http://localhost:8049/mix \
-  -F "video=@/path/to/your/video.mp4" \
-  -F "audio=@/path/to/your/music.mp3" \
-  -F "volume=background" \
-  -o video_with_background_music.mp4
-
-# Voiceover (dominant)
-curl -X POST http://localhost:8049/mix \
-  -F "video=@/path/to/your/video.mp4" \
-  -F "audio=@/path/to/your/voiceover.wav" \
-  -F "volume=main" \
-  -o video_with_voiceover.mp4
-```
-
-#### Using custom volume level:
-```bash
-# Custom volume (0.8 for the audio)
-curl -X POST http://localhost:8049/mix \
-  -F "video=@/path/to/your/video.mp4" \
-  -F "audio=@/path/to/your/audio.mp3" \
-  -F "volume=0.8" \
-  -o mixed_video.mp4
-```
-
-#### Controlling audio looping:
-```bash
-# Loop audio to match video duration (default behavior)
-curl -X POST http://localhost:8049/mix \
-  -F "video=@/path/to/your/video.mp4" \
-  -F "audio=@/path/to/your/music.mp3" \
-  -F "loop=true" \
-  -o looped_audio_video.mp4
-
-# Play audio only once (no looping)
-curl -X POST http://localhost:8049/mix \
-  -F "video=@/path/to/your/video.mp4" \
-  -F "audio=@/path/to/your/intro.mp3" \
-  -F "loop=false" \
-  -o single_play_audio.mp4
-```
-
-## Response
-
-- **Success**: Returns the mixed video file as a download
-- **Error**: Returns JSON with error details
-
-### Error Response Format:
-```json
-{
-  "error": "Description of the error"
-}
-```
-
 ## Configuration
 
-### Environment Variables
-
-- `PYTHONUNBUFFERED=1` - Enable unbuffered Python output
-- `PYTHONDONTWRITEBYTECODE=1` - Prevent Python from writing .pyc files
-
 ### File Size Limits
-
 - Maximum file size: 500MB
-- Can be adjusted by modifying `MAX_CONTENT_LENGTH` in `app/main.py`
 
-## Development
+### Docker Volume
+The audio files are stored in a regular Docker volume named `audio_files`. This volume:
+- Persists between container restarts
+- Is managed by Docker
+- Doesn't require host filesystem paths
 
-### Project Structure
-
-```
-Video-Audio-Mixer-API-Server/
-├── app/
-│   ├── main.py           # Flask application
-│   └── audio_mixer.py    # Audio mixing logic
-├── docker-compose.yml    # Docker Compose configuration
-├── Dockerfile           # Docker image configuration
-├── requirements.txt     # Python dependencies
-└── README.md           # This file
-```
-
-### Running in Development Mode
-
+To manage the volume:
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# View volume info
+docker volume inspect video-audio-mixer-api-server_audio_files
 
-# Run with debug mode
-python app/main.py
+# Remove volume (will delete all audio files)
+docker volume rm video-audio-mixer-api-server_audio_files
 ```
 
-The server will run on `http://localhost:8049` with debug mode enabled.
+## Health Check
 
-### Building Docker Image
-
+Check if the service is running:
 ```bash
-# Build the image
-docker build -t video-audio-mixer-api .
-
-# Run the container
-docker run -p 8049:8049 video-audio-mixer-api
+curl http://10.20.0.18:8049/health
 ```
 
-## Technical Details
+## Processing Status
 
-### Audio Mixing Process
-
-The API uses FFmpeg to mix audio streams:
-
-1. **Validation**: Both input files are validated using ffprobe
-2. **Volume Control**: Audio levels are adjusted using FFmpeg filters
-3. **Mixing**: Original video audio and new audio are mixed using `amix` filter
-4. **Encoding**: Output is encoded with AAC audio and copied video stream
-5. **Optimization**: Output is optimized for web playback with `faststart` flag
-
-### FFmpeg Command Structure
-
+Check if processing is in progress:
 ```bash
-ffmpeg -y -i video.mp4 -i audio.mp3 \
-  -filter_complex "[0:a]volume=0.5[a1];[1:a]volume=0.5[a2];[a1][a2]amix=inputs=2:duration=first[aout]" \
-  -map 0:v -map "[aout]" -c:v copy -c:a aac -b:a 192k -movflags +faststart output.mp4
+curl http://10.20.0.18:8049/status
+```
+
+## Migration from File Upload Version
+
+If you're migrating from the previous version that required audio file uploads:
+
+1. **Old API call:**
+```bash
+curl -X POST http://10.20.0.18:8049/mix \
+  -F "video=@video.mp4" \
+  -F "audio=@background_music.mp3" \
+  -F "volume=background" \
+  -F "loop=true"
+```
+
+2. **New API call:**
+```bash
+# First, copy the audio file to the Docker volume
+docker cp background_music.mp3 video-audio-mixer-api:/app/audio/
+
+# Then use the filename instead of uploading
+curl -X POST http://10.20.0.18:8049/mix \
+  -F "video=@video.mp4" \
+  -F "audio_filename=background_music.mp3" \
+  -F "volume=background" \
+  -F "loop=true"
 ```
 
 ## Troubleshooting
 
-### Common Issues
+### Audio File Not Found
+- Ensure the audio file exists in the Docker volume
+- Use `docker exec video-audio-mixer-api ls -la /app/audio/` to list files
+- Verify the filename matches exactly (case-sensitive)
+- Copy files using `docker cp` as shown above
 
-1. **FFmpeg not found**: Ensure FFmpeg is installed and in PATH
-2. **File format not supported**: Check that your files are in supported formats
-3. **File too large**: Increase `MAX_CONTENT_LENGTH` if needed
-4. **Permission errors**: Ensure the application has write access to `/tmp`
+### Volume Issues
+- The volume is managed by Docker automatically
+- Check if files exist: `docker exec video-audio-mixer-api ls -la /app/audio/`
+- View volume details: `docker volume inspect video-audio-mixer-api-server_audio_files`
 
-### Logs
-
-The application logs important information. To view logs:
-
-```bash
-# Docker Compose
-docker-compose logs -f
-
-# Docker
-docker logs -f video-audio-mixer-api
-```
-
-## Performance Considerations
-
-- **Memory Usage**: Large files will consume more memory during processing
-- **Processing Time**: Depends on file size and complexity
-- **Disk Space**: Temporary files are created during processing
-- **Concurrent Requests**: Multiple requests will process simultaneously
-
-## Security Notes
-
-- The API accepts file uploads - ensure proper network security
-- Temporary files are created in `/tmp` - monitor disk usage
-- No authentication is implemented - add if needed for production use
-
-## License
-
-This project is provided as-is for educational and development purposes.
+### FFmpeg Errors
+- Check that input files are not corrupted
+- Verify supported formats are being used
+- Check container logs: `docker logs video-audio-mixer-api`

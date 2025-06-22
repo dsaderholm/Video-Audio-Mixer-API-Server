@@ -4,6 +4,7 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir --upgrade pip setuptools wheel
 
@@ -21,7 +22,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Create necessary directories
 RUN mkdir -p /tmp/uploads && \
-    chown -R appuser:appuser /tmp/uploads
+    mkdir -p /app/audio && \
+    chown -R appuser:appuser /tmp/uploads && \
+    chown -R appuser:appuser /app/audio
 
 # Copy application code
 COPY app/ ./app/
