@@ -9,8 +9,8 @@ class AudioMixer:
     def __init__(self):
         self.volume_presets = {
             'mix': ('0.5', '0.5'),      # Equal mix of original video audio and new audio
-            'background': ('0.9', '0.3'), # Video audio dominant, new audio as background
-            'main': ('0.2', '0.8')       # New audio dominant, video audio as background
+            'background': ('0.9', '0.15'), # Video audio dominant, new audio quieter in background
+            'main': ('0.15', '0.9')       # New audio dominant, video audio at background level
         }
 
     def mix_audio(self, video_path, audio_path, volume='mix', loop_audio=True):
